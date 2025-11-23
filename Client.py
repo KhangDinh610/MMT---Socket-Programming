@@ -255,3 +255,20 @@ class Client:
             self.exitClient()
         else:
             self.playMovie()
+
+    def reassembleFrame(self, frameNum):
+        """Reassemble fragments thành complete frame."""
+        if frameNum not in self.frameBuffer:
+            return None
+		
+        fragments = self.frameBuffer[frameNum]
+		# Sắp xếp theo fragment index
+        sorted_fragments = [fragments[i] for i in sorted(fragments.keys())]
+		
+        return b''.join(sorted_fragments)
+
+    def cleanupBuffer(self, currentFrame):
+        """Xóa old frames khỏi buffer."""
+        frames_to_delete = [f for f in self.frameBuffer.keys() if f < currentFrame - 2]
+        for f in frames_to_delete:
+            del self.frameBuffer[f]
