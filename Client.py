@@ -38,6 +38,7 @@ class Client:
         self.teardownAcked = 0
         self.connectToServer()
         self.frameNbr = 0
+        self.frameBuffer = {}	# Buffer để reassemble fragments
 
     def createWidgets(self):
         """Build GUI."""
@@ -91,13 +92,34 @@ class Client:
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
+                    
                     currFrameNbr = rtpPacket.seqNum()
-                    print("Current Seq Num: " + str(currFrameNbr))
-                    if currFrameNbr > self.frameNbr:
-                        self.frameNbr = currFrameNbr
-                        self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+                    marker = rtpPacket.marker()
+                    payload = rtpPacket.getPayload()
+                    
+                # Tính frame number và fragment index
+                frameNum = currFrameNbr // 1000
+                fragmentIdx = currFrameNbr % 1000
+                
+                # Khởi tạo buffer cho frame mới
+                if frameNum not in self.frameBuffer:
+                    self.frameBuffer[frameNum] = {}
+                
+                # Lưu fragment
+                self.frameBuffer[frameNum][fragmentIdx] = payload
+                
+                # Nếu là fragment cuối cùng (marker = 1)
+                if marker == 1:
+                    # Reassemble toàn bộ frame
+                    complete_frame = self.reassembleFrame(frameNum)
+                    if complete_frame and frameNum > self.frameNbr:
+                        self.frameNbr = frameNum
+                        self.updateMovie(self.writeFrame(complete_frame))
+                        
+                        # Xóa frame cũ khỏi buffer
+                        self.cleanupBuffer(frameNum)
             except:
-                if self.playEvent.isSet():
+                if self.playEvent.is_set(): # Method isSet đã bị loại bỏ từ py 3.10, dùng is_set thay thế
                     break
                 if self.teardownAcked == 1:
                     try:
