@@ -2,6 +2,7 @@ import os
 import socket
 import sys
 import threading
+import time
 import tkinter.messagebox as tkMessageBox
 from tkinter import *
 
@@ -39,6 +40,13 @@ class Client:
         self.connectToServer()
         self.frameNbr = 0
         self.frameBuffer = {}	# Buffer để reassemble fragments
+        # Kiểm soát các gói tin
+        self.stats = {
+            'packets_received': 0,
+            'packets_lost': 0,
+            'bytes_received': 0,
+            'start_time': time.time()
+        }
 
     def createWidgets(self):
         """Build GUI."""
@@ -272,3 +280,28 @@ class Client:
         frames_to_delete = [f for f in self.frameBuffer.keys() if f < currentFrame - 2]
         for f in frames_to_delete:
             del self.frameBuffer[f]
+            
+    def updateStats(self, seqNum, dataSize):
+        """Track network statistics."""
+        self.stats['packets_received'] += 1
+        self.stats['bytes_received'] += dataSize
+        
+        # Detect packet loss
+        expected_seq = self.lastSeqNum + 1 if hasattr(self, 'lastSeqNum') else seqNum
+        if seqNum > expected_seq:
+            self.stats['packets_lost'] += (seqNum - expected_seq)
+        
+        self.lastSeqNum = seqNum
+        
+    def getStatistics(self):
+        """Calculate streaming statistics."""
+        elapsed = time.time() - self.stats['start_time']
+        bitrate = (self.stats['bytes_received'] * 8) / elapsed / 1000  # kbps
+        loss_rate = self.stats['packets_lost'] / (self.stats['packets_received'] + self.stats['packets_lost']) * 100
+        
+        return {
+            'bitrate_kbps': bitrate,
+            'packet_loss_percent': loss_rate,
+            'total_packets': self.stats['packets_received'],
+            'lost_packets': self.stats['packets_lost']
+        }
