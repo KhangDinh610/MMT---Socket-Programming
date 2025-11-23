@@ -1,6 +1,7 @@
 import sys
 from time import time
 HEADER_SIZE = 12
+MAX_PAYLOAD_SIZE = 1400  # Để lại space cho headers
 
 class RtpPacket:	
 	header = bytearray(HEADER_SIZE)
@@ -54,3 +55,23 @@ class RtpPacket:
 	def getPacket(self):
 		"""Return RTP packet."""
 		return self.header + self.payload
+	
+	def fragmentFrame(self, frame_data, frame_number):
+		"""Chia frame lớn thành nhiều RTP packets"""
+		fragments = []
+		total_fragments = (len(frame_data) + MAX_PAYLOAD_SIZE - 1) // MAX_PAYLOAD_SIZE
+    
+		for i in range(total_fragments):
+			start = i * MAX_PAYLOAD_SIZE
+			end = min(start + MAX_PAYLOAD_SIZE, len(frame_data))
+			fragment = frame_data[start:end]
+        
+        	# Marker bit = 1 cho fragment cuối cùng
+			marker = 1 if i == total_fragments - 1 else 0
+        
+        	# Sequence number: frame_number * 1000 + fragment_index
+			seq_num = frame_number * 1000 + i
+        
+			fragments.append((fragment, seq_num, marker))
+    
+		return fragments
