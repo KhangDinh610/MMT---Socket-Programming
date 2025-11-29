@@ -1,8 +1,9 @@
 from random import randint
-import sys, traceback, threading, socket
+import sys, traceback, threading, socket, time
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
+from RtpPacket import MAX_PAYLOAD_SIZE
 
 class ServerWorker:
 	SETUP = 'SETUP'
@@ -107,55 +108,73 @@ class ServerWorker:
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
 			
-	def sendRtp(self):
-		"""Send RTP packets over UDP."""
-		while True:
-			self.clientInfo['event'].wait(0.05) 
-			
-			# Stop sending if request is PAUSE or TEARDOWN
-			if self.clientInfo['event'].isSet(): 
-				break 
+		def sendRtp(self):
+			"""Send RTP packets over UDP."""
+			while True:
+				self.clientInfo['event'].wait(0.05) 
 				
-			data = self.clientInfo['videoStream'].nextFrame()
-			if data: 
-				frameNumber = self.clientInfo['videoStream'].frameNbr()
-				try:
-					address = self.clientInfo['rtspSocket'][1][0]
-					port = int(self.clientInfo['rtpPort'])
-					self.clientInfo['rtpSocket'].sendto(self.makeRtp(data, frameNumber),(address,port))
-				except:
-					print("Connection Error")
-					#print('-'*60)
-					#traceback.print_exc(file=sys.stdout)
-					#print('-'*60)
+				# Stop sending if request is PAUSE or TEARDOWN
+				if self.clientInfo['event'].isSet(): 
+					break 
+					
+				data = self.clientInfo['videoStream'].nextFrame()
+				if data: 
+					frameNumber = self.clientInfo['videoStream'].frameNbr()
+					
+					# Kiểm tra kích thước frame
+					if len(data) > MAX_PAYLOAD_SIZE:
+						# Fragment lớn frames
+						fragments = self.fragmentFrame(data, frameNumber)
+					
+						for fragment_data, seq_num, marker in fragments:
+							try:
+								address = self.clientInfo['rtspSocket'][1][0]
+								port = int(self.clientInfo['rtpPort'])
+								packet = self.makeRtp(fragment_data, seq_num, marker)
+								self.clientInfo['rtpSocket'].sendto(packet, (address, port))
+								# Delay nhỏ giữa các fragments
+								time.sleep(0.001)
+							except:
+								print("Connection Error")
+						else:
+						# Gửi frame nhỏ như bình thường
+							try:
+								address = self.clientInfo['rtspSocket'][1][0]
+								port = int(self.clientInfo['rtpPort'])
+								self.clientInfo['rtpSocket'].sendto(
+								self.makeRtp(data, frameNumber, 1), 
+								(address, port)
+							)
+							except:
+								print("Connection Error")
 
-	def makeRtp(self, payload, frameNbr):
-		"""RTP-packetize the video data."""
-		version = 2
-		padding = 0
-		extension = 0
-		cc = 0
-		marker = 0
-		pt = 26 # MJPEG type
-		seqnum = frameNbr
-		ssrc = 0 
-		
-		rtpPacket = RtpPacket()
-		
-		rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, payload)
-		
-		return rtpPacket.getPacket()
-		
-	def replyRtsp(self, code, seq):
-		"""Send RTSP reply to the client."""
-		if code == self.OK_200:
-			#print("200 OK")
-			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
-			connSocket = self.clientInfo['rtspSocket'][0]
-			connSocket.send(reply.encode())
-		
-		# Error messages
-		elif code == self.FILE_NOT_FOUND_404:
-			print("404 NOT FOUND")
-		elif code == self.CON_ERR_500:
-			print("500 CONNECTION ERROR")
+		def makeRtp(self, payload, frameNbr):
+			"""RTP-packetize the video data."""
+			version = 2
+			padding = 0
+			extension = 0
+			cc = 0
+			marker = 0
+			pt = 26 # MJPEG type
+			seqnum = frameNbr
+			ssrc = 0 
+			
+			rtpPacket = RtpPacket()
+			
+			rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, payload)
+			
+			return rtpPacket.getPacket()
+			
+		def replyRtsp(self, code, seq):
+			"""Send RTSP reply to the client."""
+			if code == self.OK_200:
+				#print("200 OK")
+				reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
+				connSocket = self.clientInfo['rtspSocket'][0]
+				connSocket.send(reply.encode())
+			
+			# Error messages
+			elif code == self.FILE_NOT_FOUND_404:
+				print("404 NOT FOUND")
+			elif code == self.CON_ERR_500:
+				print("500 CONNECTION ERROR")

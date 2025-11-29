@@ -2,6 +2,7 @@ import os
 import socket
 import sys
 import threading
+import time
 import tkinter.messagebox as tkMessageBox
 from tkinter import *
 
@@ -38,6 +39,14 @@ class Client:
         self.teardownAcked = 0
         self.connectToServer()
         self.frameNbr = 0
+        self.frameBuffer = {}	# Buffer để reassemble fragments
+        # Kiểm soát các gói tin
+        self.stats = {
+            'packets_received': 0,
+            'packets_lost': 0,
+            'bytes_received': 0,
+            'start_time': time.time()
+        }
 
     def createWidgets(self):
         """Build GUI."""
@@ -91,13 +100,34 @@ class Client:
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
+                    
                     currFrameNbr = rtpPacket.seqNum()
-                    print("Current Seq Num: " + str(currFrameNbr))
-                    if currFrameNbr > self.frameNbr:
-                        self.frameNbr = currFrameNbr
-                        self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+                    marker = rtpPacket.marker()
+                    payload = rtpPacket.getPayload()
+                    
+                # Tính frame number và fragment index
+                frameNum = currFrameNbr // 1000
+                fragmentIdx = currFrameNbr % 1000
+                
+                # Khởi tạo buffer cho frame mới
+                if frameNum not in self.frameBuffer:
+                    self.frameBuffer[frameNum] = {}
+                
+                # Lưu fragment
+                self.frameBuffer[frameNum][fragmentIdx] = payload
+                
+                # Nếu là fragment cuối cùng (marker = 1)
+                if marker == 1:
+                    # Reassemble toàn bộ frame
+                    complete_frame = self.reassembleFrame(frameNum)
+                    if complete_frame and frameNum > self.frameNbr:
+                        self.frameNbr = frameNum
+                        self.updateMovie(self.writeFrame(complete_frame))
+                        
+                        # Xóa frame cũ khỏi buffer
+                        self.cleanupBuffer(frameNum)
             except:
-                if self.playEvent.isSet():
+                if self.playEvent.is_set(): # Method isSet đã bị loại bỏ từ py 3.10, dùng is_set thay thế
                     break
                 if self.teardownAcked == 1:
                     try:
@@ -233,3 +263,45 @@ class Client:
             self.exitClient()
         else:
             self.playMovie()
+
+    def reassembleFrame(self, frameNum):
+        """Reassemble fragments thành complete frame."""
+        if frameNum not in self.frameBuffer:
+            return None
+		
+        fragments = self.frameBuffer[frameNum]
+		# Sắp xếp theo fragment index
+        sorted_fragments = [fragments[i] for i in sorted(fragments.keys())]
+		
+        return b''.join(sorted_fragments)
+
+    def cleanupBuffer(self, currentFrame):
+        """Xóa old frames khỏi buffer."""
+        frames_to_delete = [f for f in self.frameBuffer.keys() if f < currentFrame - 2]
+        for f in frames_to_delete:
+            del self.frameBuffer[f]
+            
+    def updateStats(self, seqNum, dataSize):
+        """Track network statistics."""
+        self.stats['packets_received'] += 1
+        self.stats['bytes_received'] += dataSize
+        
+        # Detect packet loss
+        expected_seq = self.lastSeqNum + 1 if hasattr(self, 'lastSeqNum') else seqNum
+        if seqNum > expected_seq:
+            self.stats['packets_lost'] += (seqNum - expected_seq)
+        
+        self.lastSeqNum = seqNum
+        
+    def getStatistics(self):
+        """Calculate streaming statistics."""
+        elapsed = time.time() - self.stats['start_time']
+        bitrate = (self.stats['bytes_received'] * 8) / elapsed / 1000  # kbps
+        loss_rate = self.stats['packets_lost'] / (self.stats['packets_received'] + self.stats['packets_lost']) * 100
+        
+        return {
+            'bitrate_kbps': bitrate,
+            'packet_loss_percent': loss_rate,
+            'total_packets': self.stats['packets_received'],
+            'lost_packets': self.stats['packets_lost']
+        }
