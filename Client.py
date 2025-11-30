@@ -105,13 +105,13 @@ class Client:
                     marker = rtpPacket.marker()
                     payload = rtpPacket.getPayload()
                     
-                # Tính frame number và fragment index
-                frameNum = currFrameNbr // 1000
-                fragmentIdx = currFrameNbr % 1000
+                    # Tính frame number và fragment index
+                    frameNum = currFrameNbr // 1000
+                    fragmentIdx = currFrameNbr % 1000
                 
                 # Khởi tạo buffer cho frame mới
-                if frameNum not in self.frameBuffer:
-                    self.frameBuffer[frameNum] = {}
+                    if frameNum not in self.frameBuffer:
+                        self.frameBuffer[frameNum] = {}
                 
                 # Lưu fragment
                 self.frameBuffer[frameNum][fragmentIdx] = payload
@@ -268,7 +268,7 @@ class Client:
         """Reassemble fragments thành complete frame."""
         if frameNum not in self.frameBuffer:
             return None
-		
+        
         fragments = self.frameBuffer[frameNum]
 		# Sắp xếp theo fragment index
         sorted_fragments = [fragments[i] for i in sorted(fragments.keys())]

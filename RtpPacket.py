@@ -86,15 +86,15 @@ class RtpPacket:
 			start = i * MAX_PAYLOAD_SIZE
 			end = min(start + MAX_PAYLOAD_SIZE, len(frame_data))
 			fragment = frame_data[start:end]
-        
+
         	# Marker bit = 1 cho fragment cuối cùng
 			marker = 1 if i == total_fragments - 1 else 0
-        
+
         	# Sequence number: frame_number * 1000 + fragment_index
 			seq_num = frame_number * 1000 + i
-        
+
 			fragments.append((fragment, seq_num, marker))
-    
+			
 		return fragments
 	
 	def marker(self):
