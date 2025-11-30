@@ -214,15 +214,31 @@ class Client:
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
         while True:
-            reply = self.rtspSocket.recv(1024)
-            if reply:
-                self.parseRtspReply(reply.decode("utf-8"))
-            if self.requestSent == self.TEARDOWN:
-                try:
-                    self.rtspSocket.shutdown(socket.SHUT_RDWR)
-                except Exception:
-                    pass
-                self.rtspSocket.close()
+            try:
+                reply = self.rtspSocket.recv(1024)
+                if reply:
+                    self.parseRtspReply(reply.decode("utf-8"))
+                else:
+                    # Socket đã đóng, thoát vòng lặp
+                    break
+                
+                if self.requestSent == self.TEARDOWN:
+                    try:
+                        self.rtspSocket.shutdown(socket.SHUT_RDWR)
+                    except Exception:
+                        pass
+                    self.rtspSocket.close()
+                    break
+            except ConnectionAbortedError:
+                # Kết nối bị đóng đột ngột
+                print("RTSP connection aborted")
+                break
+            except OSError:
+                # Socket error khác
+                print("RTSP socket error")
+                break
+            except Exception as e:
+                print(f"Error in recvRtspReply: {e}")
                 break
 
     def parseRtspReply(self, data):
