@@ -4,6 +4,51 @@ import sys, traceback, threading, socket
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
 
+class RequestParser:
+	def __init__(self, request):
+		data = request.decode("utf-8")
+		lines = [line.strip() for line in data.split("\r\n") if line.strip()]
+
+		self.requestType = None
+		self.filename = None
+		self.seq = None
+		self.transportLine = None
+		self.session = None
+		self.rtp_port = None
+		self.exist = True   # this instance exists
+
+		if not lines:
+			self.exist = False
+			return
+
+		# Parse request line (e.g. SETUP movie.Mjpeg RTSP/1.0)
+		line1 = lines[0].split()
+		if len(line1) >= 2:
+			self.requestType = line1[0]
+			self.filename = line1[1]
+		else:
+			self.exist = False
+			return
+
+		for line in lines[1:]:
+			if line.startswith("CSeq:"):
+				self.seq = line.split(":", 1)[1].strip()
+			elif line.startswith("Transport:"):
+				self.transportLine = line
+				# Extract RTP port if SETUP
+				if "client_port=" in line:
+					self.rtp_port = line.split("client_port=")[1]
+					self.rtp_port = (
+						self.rtp_port.split(";")[0]
+						if ";" in self.rtp_port
+						else self.rtp_port
+					).strip()
+			elif line.startswith("Session:"):
+				self.session = line.split(":", 1)[1].strip()
+
+	def __bool__(self):
+		return self.exist
+
 class ServerWorker:
 	SETUP = 'SETUP'
 	PLAY = 'PLAY'
@@ -34,41 +79,40 @@ class ServerWorker:
 			data = connSocket.recv(256)
 			if data:
 				print("Data received:\n" + data.decode("utf-8"))
-				self.processRtspRequest(data.decode("utf-8"))
+				self.processRtspRequest(data)
 	
 	def processRtspRequest(self, data):
 		"""Process RTSP request sent from the client."""
-		# Get the request type
-		request = data.split('\n')
-		line1 = request[0].split(' ')
-		requestType = line1[0]
+		# SỬ DỤNG REQUEST PARSER Ở ĐÂY
+		parser = RequestParser(data)
 		
-		# Get the media file name
-		filename = line1[1]
+		if not parser:
+			return
 		
-		# Get the RTSP sequence number 
-		seq = request[1].split(' ')
+		# Lấy thông tin từ parser cho gọn
+		requestType = parser.requestType
+		filename = parser.filename
+		seq = parser.seq
 		
 		# Process SETUP request
 		if requestType == self.SETUP:
 			if self.state == self.INIT:
-				# Update state
 				print("processing SETUP\n")
 				
 				try:
 					self.clientInfo['videoStream'] = VideoStream(filename)
 					self.state = self.READY
 				except IOError:
-					self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
+					self.replyRtsp(self.FILE_NOT_FOUND_404, seq)
 				
 				# Generate a randomized RTSP session ID
 				self.clientInfo['session'] = randint(100000, 999999)
 				
 				# Send RTSP reply
-				self.replyRtsp(self.OK_200, seq[1])
+				self.replyRtsp(self.OK_200, seq)
 				
-				# Get the RTP/UDP port from the last line
-				self.clientInfo['rtpPort'] = request[2].split(' ')[3]
+				# LẤY CỔNG RTP TỪ PARSER (KHÔNG BỊ LỖI SPLIT NỮA)
+				self.clientInfo['rtpPort'] = parser.rtp_port
 		
 		# Process PLAY request 		
 		elif requestType == self.PLAY:
@@ -79,7 +123,7 @@ class ServerWorker:
 				# Create a new socket for RTP/UDP
 				self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 				
-				self.replyRtsp(self.OK_200, seq[1])
+				self.replyRtsp(self.OK_200, seq)
 				
 				# Create a new thread and start sending RTP packets
 				self.clientInfo['event'] = threading.Event()
@@ -94,7 +138,7 @@ class ServerWorker:
 				
 				self.clientInfo['event'].set()
 			
-				self.replyRtsp(self.OK_200, seq[1])
+				self.replyRtsp(self.OK_200, seq)
 		
 		# Process TEARDOWN request
 		elif requestType == self.TEARDOWN:
@@ -102,7 +146,7 @@ class ServerWorker:
 
 			self.clientInfo['event'].set()
 			
-			self.replyRtsp(self.OK_200, seq[1])
+			self.replyRtsp(self.OK_200, seq)
 			
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
