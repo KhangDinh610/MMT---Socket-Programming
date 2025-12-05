@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os
 import cv2
 import numpy as np
+import time
 
 from RtpPacket import RtpPacket
 
@@ -40,6 +41,11 @@ class Client:
 		# Buffers cho reassembly
 		self.frameBuffer = bytearray()
 		self.lastSeqNum = -1
+		
+		# Statistics tracking
+		self.lossCounter = 0
+		self.totalBytesReceived = 0
+		self.startTime = None
 		
 	def createWidgets(self):
 		"""Build GUI."""
@@ -78,6 +84,23 @@ class Client:
 	
 	def exitClient(self):
 		"""Teardown button handler."""
+		# Print statistics
+		if self.frameNbr != 0:
+			lossRate = self.lossCounter / self.frameNbr
+			print("\n" + "="*60)
+			print("STREAMING STATISTICS")
+			print("="*60)
+			print(f"[*] Total Frames Received: {self.frameNbr}")
+			print(f"[*] Total Packets Lost: {self.lossCounter}")
+			print(f"[*] RTP Packet Loss Rate: {lossRate:.4f} ({lossRate*100:.2f}%)")
+			
+			if self.startTime:
+				duration = time.time() - self.startTime
+				print(f"[*] Streaming Duration: {duration:.2f} seconds")
+				print(f"[*] Total Data Received: {self.totalBytesReceived/1024/1024:.2f} MB")
+				print(f"[*] Average Bandwidth: {(self.totalBytesReceived * 8 / duration / 1000000):.2f} Mbps")
+			print("="*60 + "\n")
+		
 		self.sendRtspRequest(self.TEARDOWN)
 		self.master.destroy()
 		# Delete cache file if exists
@@ -93,6 +116,10 @@ class Client:
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
+			# Start timing
+			if self.startTime is None:
+				self.startTime = time.time()
+			
 			# Create a new thread to listen for RTP packets
 			threading.Thread(target=self.listenRtp).start()
 			self.playEvent = threading.Event()
@@ -112,25 +139,35 @@ class Client:
 					marker = rtpPacket.marker()
 					payload = rtpPacket.getPayload()
 					
+					# Track bytes received
+					self.totalBytesReceived += len(data)
+					
+					# Detect packet loss
+					if self.lastSeqNum != -1:
+						expectedSeq = self.lastSeqNum + 1
+						if currSeqNum != expectedSeq:
+							loss = currSeqNum - expectedSeq
+							self.lossCounter += loss
+							print(f"[*] Packet loss! Expected {expectedSeq}, got {currSeqNum}. Lost {loss} packet(s)")
+					
 					# Kiểm tra xem có phải fragment tiếp theo không
-					if self.lastSeqNum == -1 or currSeqNum == self.lastSeqNum + 1:
+					if self.lastSeqNum == -1 or currSeqNum == self.lastSeqNum + 1 or currSeqNum > self.lastSeqNum:
 						# Thêm fragment vào buffer
 						self.frameBuffer.extend(payload)
 						self.lastSeqNum = currSeqNum
 						
 						# Nếu đây là fragment cuối cùng (marker = 1)
 						if marker == 1:
-							print(f"Frame complete with {len(self.frameBuffer)} bytes")
+							print(f"Frame {self.frameNbr + 1} complete with {len(self.frameBuffer)} bytes")
 							# Decode và hiển thị frame
 							self.updateMovieOpenCV(bytes(self.frameBuffer))
 							# Reset buffer cho frame tiếp theo
 							self.frameBuffer = bytearray()
 							self.frameNbr += 1
 					else:
-						# Mất packet, reset buffer
-						print(f"Packet loss detected. Expected {self.lastSeqNum + 1}, got {currSeqNum}")
+						# Sequence number không đúng, reset buffer
+						print(f"Unexpected sequence. Expected > {self.lastSeqNum}, got {currSeqNum}")
 						self.frameBuffer = bytearray()
-						self.lastSeqNum = -1
 						
 			except:
 				# Stop listening upon requesting PAUSE or TEARDOWN
