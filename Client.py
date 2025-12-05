@@ -47,7 +47,7 @@ class Client:
 
 	def createWidgets(self):
 		"""Build GUI."""
-		# 1. Nút Setup (Màu cam nhạt)
+		# 1. Nút Setup 
 		self.setup = Button(self.master, width=20, padx=3, pady=3)
 		self.setup["text"] = "⚙ Setup" 
 		self.setup["command"] = self.setupMovie
@@ -55,7 +55,7 @@ class Client:
 		self.setup["font"] = ("Helvetica", 10, "bold") # Phông chữ đậm
 		self.setup.grid(row=1, column=0, padx=2, pady=2)
 
-		# 2. Nút Play (Màu xanh lá - Icon tam giác)
+		# 2. Nút Play 
 		self.start = Button(self.master, width=20, padx=3, pady=3)
 		self.start["text"] = "▶ Play"
 		self.start["command"] = self.playMovie
@@ -63,7 +63,7 @@ class Client:
 		self.start["font"] = ("Helvetica", 10, "bold")
 		self.start.grid(row=1, column=1, padx=2, pady=2)
 
-		# 3. Nút Pause (Màu vàng - Icon 2 gạch)
+		# 3. Nút Pause 
 		self.pause = Button(self.master, width=20, padx=3, pady=3)
 		self.pause["text"] = "⏸ Pause"
 		self.pause["command"] = self.pauseMovie
@@ -71,7 +71,7 @@ class Client:
 		self.pause["font"] = ("Helvetica", 10, "bold")
 		self.pause.grid(row=1, column=2, padx=2, pady=2)
 
-		# 4. Nút Teardown (Màu đỏ nhạt - Icon ô vuông)
+		# 4. Nút Teardown 
 		self.teardown = Button(self.master, width=20, padx=3, pady=3)
 		self.teardown["text"] = "■ Stop" 
 		self.teardown["command"] = self.exitClient
@@ -82,7 +82,7 @@ class Client:
 		# 5. Màn hình hiển thị Video
 		self.label = Label(self.master, height=19)
 		self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
-		self.label["bg"] = "black" # Viền đen cho ngầu
+		self.label["bg"] = "black" 
 
 		# 6. --- THÊM ĐỒNG HỒ ĐẾM GIỜ ---
 		self.timerLabel = Label(self.master, text="Time: 00:00", font=("Helvetica", 12))
@@ -98,9 +98,9 @@ class Client:
 		# 1. Gửi lệnh TEARDOWN cho Server để nó ngừng gửi video
 		self.sendRtspRequest(self.TEARDOWN)
 		
-		# 2. Hiện thông báo "Hết phim" (Code mới thêm)
+		# 2. Hiện thông báo "Hết video" 
 		# Lưu ý: Phải bấm OK ở thông báo này thì cửa sổ mới tắt
-		tkinter.messagebox.showinfo("Thông báo", "Hết phim rồi! Cảm ơn đã xem.\n(Code by Thùy Linh)")
+		tkinter.messagebox.showinfo("Thông báo", "Hết video rồi! Cảm ơn đã xem.")
 
 		# 3. Đóng cửa sổ chương trình
 		self.master.destroy()
