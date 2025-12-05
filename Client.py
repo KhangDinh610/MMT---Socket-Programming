@@ -37,7 +37,12 @@ class Client:
         self.requestSent = -1
         self.teardownAcked = 0
         self.connectToServer()
-        self.frameNbr = 0
+        self.frameNbr = 0 
+
+        self.totalReceived = 0      # Tổng số gói thực nhận được
+        self.firstSeqNum = 0        # Số thứ tự của gói đầu tiên
+        self.currentSeqNum = 0      # Số thứ tự của gói hiện tại
+        self.expectedPackets = 0    # Tổng số gói LẼ RA phải nhận
 
     def createWidgets(self):
         """Build GUI."""
@@ -91,6 +96,30 @@ class Client:
                 if data:
                     rtpPacket = RtpPacket()
                     rtpPacket.decode(data)
+
+                    currSeqNum = rtpPacket.seqNum()
+                    
+                    # Nếu là gói tin đầu tiên nhận được
+                    if self.totalReceived == 0:
+                        self.firstSeqNum = currSeqNum
+                    
+                    self.totalReceived += 1
+                    self.currentSeqNum = currSeqNum
+                    
+                    # Công thức tính số gói bị mất:
+                    # Số gói lẽ ra phải có = (Số thứ tự hiện tại - Số thứ tự đầu tiên + 1)
+                    # Số gói mất = Số gói lẽ ra phải có - Số gói thực nhận
+                    self.expectedPackets = self.currentSeqNum - self.firstSeqNum + 1
+                    lostPackets = self.expectedPackets - self.totalReceived
+                    
+                    # Tránh chia cho 0
+                    if self.expectedPackets > 0:
+                        lossRate = (lostPackets / self.expectedPackets) * 100
+                    else:
+                        lossRate = 0
+                        
+                    print(f"SeqNum: {currSeqNum} | Received: {self.totalReceived} | Lost: {lostPackets} | Rate: {lossRate:.2f}%")
+
                     currFrameNbr = rtpPacket.seqNum()
                     print("Current Seq Num: " + str(currFrameNbr))
                     if currFrameNbr > self.frameNbr:
@@ -175,6 +204,19 @@ class Client:
                 session=self.sessionId,
             )
             self.requestSent = self.TEARDOWN
+
+            print("\n" + "-" * 30)
+            print("REPORT SUMMARY:")
+            print(f"Total Expected Packets: {self.expectedPackets}")
+            print(f"Total Received Packets: {self.totalReceived}")
+            
+            if self.expectedPackets > 0:
+                loss_rate = float(self.expectedPackets - self.totalReceived) / self.expectedPackets * 100
+            else:
+                loss_rate = 0
+                
+            print(f"Packet Loss Rate: {loss_rate:.2f}%")
+            print("-" * 30 + "\n")
         else:
             return
 
